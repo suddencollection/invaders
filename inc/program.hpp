@@ -18,11 +18,6 @@ public:
   ~Program();
   void run();
 
-  // void loadArena(Path sprites_path);
-  // void drawSprite(WINDOW* win, Entity& entity);
-  // void render(int input, float frameDuration);
-  // void logic(int input, float ts);
-
 private:
   void initCurses();
   void createWindows();
@@ -30,6 +25,11 @@ private:
   void createEntities();
   void setCollisions();
   void endCurses();
+
+  // void loadArena(Path sprites_path);
+  void drawSprite(WINDOW* win, Entity& entity);
+  void render(int input, float frameDuration);
+  void logic(int input, float ts);
 
 private:
   // Windows
@@ -63,6 +63,7 @@ private:
   YX<float> m_alienPosOffset;
   YX<float> m_alienVelocity{0, 1};
   YX<int> m_alienStartingPoint{3, 9};
+  bool m_drawCollisions = false;
 
   enum class GameState
   {

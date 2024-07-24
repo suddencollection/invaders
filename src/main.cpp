@@ -24,7 +24,7 @@ int main()
   try {
     auto path = get_sprite_path();
     auto program = Program{path};
-    // program.run();
+    program.run();
   }
   catch(std::exception& e) {
     std::cerr << e.what() << '.' << std::endl;

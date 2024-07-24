@@ -1,6 +1,8 @@
 #include "program.hpp"
 
 #include <cassert>
+#include <cmath>
+#include <thread>
 
 Program::Program(std::filesystem::path sprites_path)
 {
@@ -115,243 +117,252 @@ void Program::endCurses()
   endwin();
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////
-// void Program::drawSprite(WINDOW* win, Entity& entity)
-// {
-//   YX<int> drawingPoint;
-//   drawingPoint.y = std::round(entity.pos.y);
-//   drawingPoint.x = std::round(entity.pos.x);
-//   wmove(win, drawingPoint.y, drawingPoint.x);
-//
-//   for(int i{}; i < entity.spriteView->bufferSize(); ++i) {
-//     if(entity.spriteView[i] == '\n') {
-//       ++drawingPoint.y;
-//       wmove(win, drawingPoint.y, drawingPoint.x);
-//
-//       continue;
-//     }
-//
-//     waddch(win, entity.spriteView[i]);
-//   }
-// }
+//////////////////
 
-// void Program::render(int input, float frameDuration)
-// {
-//   wclear(stdscr);
-//   wclear(arenaWin);
-//   box(arenaBorderWin, 0, 0);
-//   //  box(arenaWin, 0, 0);
-//
-//   static bool drawCollisions{};
-//
-//   switch(input) {
-//     case '1':
-//       drawCollisions = false;
-//       break;
-//     case '2':
-//       drawCollisions = true;
-//       break;
-//   }
-//
-//   switch(static_cast<int>(drawCollisions)) {
-//     case false:
-//       for(auto& e : entities) {
-//         drawSprite(arenaWin, e.second);
-//       }
-//       break;
-//     case true:
-//       for(int y{}; y < getmaxy(arenaWin); ++y) {
-//         for(int x{}; x < getmaxx(arenaWin); ++x) {
-//           wmove(arenaWin, y, x);
-//           if(collisionBuffer.at(YX<int>{y, x}) != 0) {
-//             waddch(arenaWin, ACS_CKBOARD | COLOR_PAIR(1));
-//           } else {
-//             waddch(arenaWin, ACS_CKBOARD | COLOR_PAIR(2));
-//           }
-//         }
-//       }
-//       break;
-//   }
-//
-//   int framerate = 1.f / frameDuration;
-//   mvprintw(0, 0, "ts[%f]", frameDuration);
-//   mvprintw(1, 0, "shipYX[%f, %f]", entities[entityIDs.ship].pos.y, entities[entityIDs.ship].pos.x);
-//   mvprintw(2, 0, "bulletCount[%lu]", bulletIDs.size());
-//   mvprintw(3, 0, "framerate[%i]", framerate);
-//
-//   refresh();
-//   wrefresh(arenaBorderWin);
-//   wrefresh(arenaWin);
-// }
+void Program::render(int input, float frameDuration)
+{
+  wclear(stdscr);
+  wclear(m_arenaWin);
+  box(m_arenaBorderWin, 0, 0);
+  // box(arenaWin, 0, 0);
 
-// void Program::logic(int input, float ts)
-// {
-//   //  collisionBuffer.clear(YX<int>{1, 1}, YX<int>{static_cast<int>(getmaxy(collisionWin)) - 1, static_cast<int>(getmaxx(collisionWin)) - 1});
-//
-//   // move ship + spawn bullets
-//   auto& shipEntity{entities[entityIDs.ship]};
-//   YX<float> leftShipCollider{shipEntity.pos};
-//   YX<float> rightShipCollider{shipEntity.pos.y, shipEntity.pos.x + shipEntity.spriteView->size().x - 1};
-//   static auto lastShot{std::chrono::steady_clock::now()};
-//   switch(input) {
-//     case ';':
-//       rightShipCollider.x += 16.f * ts;
-//       if(collisionBuffer.at(rightShipCollider) == 0) {
-//         shipEntity.pos.x += 16.f * ts;
-//       }
-//       break;
-//     case 'j':
-//       leftShipCollider.x -= 16.f * ts;
-//       if(collisionBuffer.at(leftShipCollider) == 0) {
-//         shipEntity.pos.x -= 16.f * ts;
-//       }
-//       break;
-//     case ' ':
-//       auto now = std::chrono::steady_clock::now();
-//       if((now - lastShot) >= std::chrono::milliseconds(300)) {
-//         lastShot = now;
-//
-//         Entity::ID bullet{Entity::genID()};
-//         bulletIDs.push_back(bullet);
-//
-//         static bool side{};
-//         Entity& ship{shipEntity};
-//
-//         entities[bullet].health = 3;
-//         entities[bullet].pos.x = ship.pos.x + side + (ship.spriteView->size().x / 2.0) - 1;
-//         entities[bullet].pos.y = ship.pos.y - (ship.spriteView->size().y / 2.0) + 1;
-//         entities[bullet].spriteView = shipBulletSprite.value();
-//         entities[bullet].velocity = {8, 0};
-//
-//         side = !side;
-//       }
-//       break;
-//   }
-//
-//   // move aliens
-//   for(auto& alienID : alienIDs) {
-//     collisionBuffer.clear(alienID);
-//     auto& alien{entities[alienID]};
-//     alien.pos.x += (alienVelocity.x) * ts;
-//     //    alien.pos.y += (alienVelocity.y + alienSpeedIntensifier) * ts;
-//     collisionBuffer.setCollision(alienID);
-//   }
-//
-//   static int direction{1};
-//   static float groupMovement{0.f};
-//   groupMovement += alienVelocity.x * ts;
-//   if(groupMovement <= -4.f || groupMovement >= 4.f) {
-//     alienVelocity.x = alienVelocity.x * direction;
-//     // alienVelocity.y *= -1;
-//     direction = -direction;
-//   }
-//
-//   mvprintw(4, 0, "groupMovement[%f]", groupMovement);
-//   mvprintw(5, 0, "vel[%f, %f]", alienVelocity.y, alienVelocity.x);
-//
-//   // move bullets
-//   for(auto& bulletID : bulletIDs) {
-//     auto& bullet{entities[bulletID]};
-//
-//     bullet.pos.x += bullet.velocity.x * ts;
-//     bullet.pos.y -= bullet.velocity.y * ts;
-//
-//     //    YX<int> bulletPos{static_cast<int>(bullet.pos.y), static_cast<int>(bullet.pos.x)};
-//     int hit{collisionBuffer.at(bullet.pos)};
-//     if(hit != 0) {
-//       if(hit != -1) {
-//         auto it{entities.find(hit)};
-//         it->second.health -= 1;
-//       }
-//
-//       bullet.health = 0;
-//     }
-//   }
-//
-//   static std::vector<Entity::ID> bulletsToErase;
-//   for(auto& bulletID : bulletIDs) // destroy bullets with health 0
-//   {
-//     auto& bullet{entities[bulletID]};
-//     if(bullet.health == 0) {
-//       entities.erase(bulletID);
-//       bulletsToErase.push_back(bulletID);
-//     }
-//   }
-//
-//   static std::vector<Entity::ID> aliensToErase;
-//   for(auto& alienID : alienIDs) // destroy aliens with health 0
-//   {
-//     auto& alien{entities[alienID]};
-//     if(alien.health == 0) {
-//       collisionBuffer.clear(alienID);
-//       entities.erase(alienID);
-//       aliensToErase.push_back(alienID);
-//       if(alienVelocity.x > 0)
-//         alienVelocity.x += 0.125;
-//       else
-//         alienVelocity.x -= 0.125;
-//     }
-//   }
-//
-//   for(auto& id : aliensToErase)
-//     alienIDs.remove(id);
-//
-//   for(auto& id : bulletsToErase)
-//     bulletIDs.remove(id);
-//
-//   aliensToErase.clear();
-//   bulletsToErase.clear();
-//
-//   if(alienIDs.size() == 0)
-//     gameState = GameState::win;
-//
-//   if(entities[entityIDs.ship].health == 0)
-//     gameState = GameState::lose;
-// }
+  // Draw sprites
+  for(auto& e : m_entities) {
+    drawSprite(m_arenaWin, e.second);
+  }
+
+  // Draw Collisions
+  if(m_drawCollisions) {
+    for(int y{}; y < getmaxy(m_arenaWin); ++y) {
+      for(int x{}; x < getmaxx(m_arenaWin); ++x) {
+        wmove(m_arenaWin, y, x);
+        if(m_collisionBuffer.at(YX<int>{y, x}) != 0) {
+          waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(1));
+        } else {
+          waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(2));
+        }
+      }
+    }
+  }
+
+  // int framerate = 1.f / frameDuration;
+  // mvprintw(0, 0, "ts[%f]", frameDuration);
+  // mvprintw(1, 0, "shipYX[%f, %f]", entities[entityIDs.ship].pos.y, entities[entityIDs.ship].pos.x);
+  // mvprintw(2, 0, "bulletCount[%lu]", bulletIDs.size());
+  // mvprintw(3, 0, "framerate[%i]", framerate);
+
+  refresh();
+  wrefresh(m_arenaBorderWin);
+  wrefresh(m_arenaWin);
+}
+
+void Program::drawSprite(WINDOW* win, Entity& entity)
+{
+  YX<int> drawingPoint{
+    .y = drawingPoint.y = std::round(entity.position().y),
+    .x = drawingPoint.x = std::round(entity.position().x),
+  };
+  wmove(win, drawingPoint.y, drawingPoint.x);
+
+  for(int i{}; i < entity.sprite().bufferSize(); ++i) {
+    if(entity.sprite()[i] == '\n') {
+      ++drawingPoint.y;
+      wmove(win, drawingPoint.y, drawingPoint.x);
+      continue;
+    }
+
+    waddch(win, entity.sprite()[i]);
+  }
+}
+
+void Program::logic(int input, float timeStep)
+{
+  auto& ts = timeStep;
+
+  // Show Collisions
+  switch(input) {
+    case '1':
+      m_drawCollisions = false;
+      break;
+    case '2':
+      m_drawCollisions = true;
+      break;
+  }
+
+  // Move ship and Spawn bullets
+  Entity& shipEntity = m_entities.at(m_entityIDs.ship);
+  YX<float> leftShipCollider{shipEntity.position()};
+  YX<float> rightShipCollider{shipEntity.position().y, shipEntity.position().x + shipEntity.sprite().size().x - 1};
+  static auto lastShot{std::chrono::steady_clock::now()};
+  switch(input) {
+    case ';':
+      rightShipCollider.x += 16.f * ts;
+      if(m_collisionBuffer.at(rightShipCollider) == 0) {
+        shipEntity.position().x += 16.f * ts;
+      }
+      break;
+    case 'j':
+      leftShipCollider.x -= 16.f * ts;
+      if(m_collisionBuffer.at(leftShipCollider) == 0) {
+        shipEntity.position().x -= 16.f * ts;
+      }
+      break;
+    case ' ':
+      auto now = std::chrono::steady_clock::now();
+      if((now - lastShot) >= std::chrono::milliseconds(300)) {
+        lastShot = now;
+
+        static bool side{};
+        int health = 3;
+        YX<float> position{
+          .y = shipEntity.position().y - (shipEntity.sprite().size().y / 2.0f) + 1,
+          .x = shipEntity.position().x + side + (shipEntity.sprite().size().x / 2.0f) - 1,
+        };
+        YX<float> velocity = {8, 0};
+        Entity bullet{position, velocity, health, m_sprites.shipBullet};
+        m_entityIDs.bullets.push_back(bullet.id());
+        side = !side;
+      }
+      break;
+  }
+
+  // move aliens
+  for(auto& alienID : m_entityIDs.aliens) {
+    m_collisionBuffer.clear(alienID);
+    auto& alien = m_entities.at(alienID);
+    alien.position().x += (m_alienVelocity.x) * ts;
+    //    alien.pos.y += (alienVelocity.y + alienSpeedIntensifier) * ts;
+    m_collisionBuffer.setCollision(alienID);
+  }
+
+  static int direction{1};
+  static float groupMovement{0.f};
+  groupMovement += m_alienVelocity.x * ts;
+  if(groupMovement <= -4.f || groupMovement >= 4.f) {
+    m_alienVelocity.x = m_alienVelocity.x * direction;
+    // alienVelocity.y *= -1;
+    direction = -direction;
+  }
+
+  // mvprintw(4, 0, "groupMovement[%f]", groupMovement);
+  // mvprintw(5, 0, "vel[%f, %f]", m_alienVelocity.y, m_alienVelocity.x);
+
+  // Move bullets
+  for(auto& bulletID : m_entityIDs.bullets) {
+    auto& bullet = m_entities.at(bulletID);
+
+    bullet.position().x += bullet.velocity().x * ts;
+    bullet.position().y -= bullet.velocity().y * ts;
+
+    // YX<int> bulletPos{static_cast<int>(bullet.pos.y), static_cast<int>(bullet.pos.x)};
+    int hit = m_collisionBuffer.at(bullet.position());
+    if(hit != CollisionBuffer::Empty) {
+      if(hit != CollisionBuffer::Invalid) {
+        auto it = m_entities.find(hit);
+        it->second.health() -= 1;
+      }
+
+      bullet.health() = 0;
+    }
+  }
+
+  // Erase Dead Entities
+  std::vector<Entity::ID> bulletsToErase{};
+  std::vector<Entity::ID> aliensToErase{};
+
+  for(auto& bulletID : m_entityIDs.bullets) // destroy bullets with health 0
+  {
+    auto& bullet = m_entities.at(bulletID);
+    if(bullet.health() == 0) {
+      m_entities.erase(bulletID);
+      bulletsToErase.push_back(bulletID);
+    }
+  }
+
+  for(auto& alienID : m_entityIDs.aliens) // destroy aliens with health 0
+  {
+    auto& alien = m_entities.at(alienID);
+    if(alien.health() == 0) {
+      m_collisionBuffer.clear(alienID);
+      m_entities.erase(alienID);
+
+      // Small alien groups should be faster
+      aliensToErase.push_back(alienID);
+      if(m_alienVelocity.x > 0)
+        m_alienVelocity.x += 0.125;
+      else
+        m_alienVelocity.x -= 0.125;
+    }
+  }
+
+  for(auto& id : aliensToErase)
+    m_entityIDs.aliens.remove(id);
+
+  for(auto& id : bulletsToErase)
+    m_entityIDs.bullets.remove(id);
+
+  if(m_entityIDs.aliens.size() == 0)
+    m_gameState = GameState::won;
+
+  if(m_entities.at(m_entityIDs.ship).health() == 0)
+    m_gameState = GameState::lose;
+}
 
 void Program::run()
 {
   auto& now{std::chrono::steady_clock::now};
-  auto startTime{now()};
-  auto endTime{now()};
-  std::chrono::duration<float> frameDuration{};
-  std::chrono::duration<float> minimunTimeStep{0.0208333}; //{0.041};
+  using Duration = std::chrono::duration<float>;
+  auto startTime = now();
+  auto endTime = now();
+  Duration frameDuration{};
+  Duration minimunTimeStep{0.0208333}; //{0.041};
 
-  int input{};
-  while(gameState == GameState::running) {
+  while(true) {
+    // time since the last frame
     endTime = now();
     frameDuration = endTime - startTime;
     startTime = endTime;
 
-    input = getch();
+    // input and processing
+    int input = getch();
     logic(input, frameDuration.count());
 
-    if(frameDuration < minimunTimeStep)
-      std::this_thread::sleep_for(minimunTimeStep - frameDuration);
+    // if(frameDuration < minimunTimeStep)
+    //   std::this_thread::sleep_for(minimunTimeStep - frameDuration);
 
     render(input, frameDuration.count());
-
-    if(input == 'q')
-      gameState = GameState::quitted;
   }
 
-  nodelay(stdscr, false);
-
-  YX<int> size{4, 16};
-  WINDOW* resultWin{newwin(size.y, size.x, (getmaxy(stdscr) - size.y) / 2, (getmaxx(stdscr) - size.x) / 2)};
-
-  box(resultWin, 0, 0);
-  wmove(resultWin, getmaxy(resultWin) / 2, (getmaxx(resultWin) - 8) / 2);
-  if(entities[entityIDs.ship].health > 0 && alienIDs.size() == 0) {
-    wprintw(resultWin, "you won");
-  } else if(entities[entityIDs.ship].health == 0 && alienIDs.size() > 0) {
-    wprintw(resultWin, "you lost");
-  } else {
-    wprintw(resultWin, "draw?");
-  }
-
-  refresh();
-  wrefresh(resultWin);
-  while(getch() != '\n')
-    continue;
+  // int input{};
+  // while(gameState == GameState::running) {
+  //   endTime = now();
+  //   frameDuration = endTime - startTime;
+  //   startTime = endTime;
+  //
+  //   input = getch();
+  //   logic(input, frameDuration.count());
+  //
+  //   if(frameDuration < minimunTimeStep)
+  //     std::this_thread::sleep_for(minimunTimeStep - frameDuration);
+  //
+  //   render(input, frameDuration.count());
+  //
+  //   if(input == 'q')
+  //     gameState = GameState::quitted;
+  // }
+  //
+  // nodelay(stdscr, false);
+  //
+  // if(m_entities[m_entityIDs.ship].health() > 0 && m_entityIDs.aliens.size() == 0) {
+  //   "you won";
+  // } else if(entities[entityIDs.ship].health == 0 && alienIDs.size() > 0) {
+  //   "you lost";
+  // } else {
+  //   "draw?";
+  // }
+  //
+  // refresh();
+  // wrefresh(resultWin);
+  // while(getch() != '\n')
+  //   continue;
 }

@@ -9,6 +9,9 @@
 class CollisionBuffer
 {
 public:
+  static constexpr int Empty = 0;
+  static constexpr int Invalid = -1;
+
   CollisionBuffer(std::unordered_map<Entity::ID, Entity>& entities);
   void resize(YX<int> size);
   void setCollision(Entity::ID e);
