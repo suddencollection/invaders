@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <iostream>
 #include <thread>
 
 Program::Program(std::filesystem::path sprites_path)
@@ -67,7 +68,7 @@ void Program::createEntities()
   YX<float> vel = {0, 0};
   Entity ship{pos, vel, health, m_sprites.ship};
   m_entityIDs.ship = ship.id();
-  m_entities.insert({m_entityIDs.ship, ship});
+  m_entities.insert({m_entityIDs.ship, std::move(ship)});
 
   // aliens
   YX<int> alienPos{m_alienStartingPoint};
@@ -81,8 +82,8 @@ void Program::createEntities()
       alien.position().x += alien.sprite().size().x + 2;
 
       // registers it
-      m_entities.insert({alien.id(), alien});
       m_entityIDs.aliens.push_back(alien.id());
+      m_entities.insert({alien.id(), std::move(alien)});
     }
 
     // shifts positions for the next line
@@ -119,7 +120,15 @@ void Program::endCurses()
 
 //////////////////
 
-void Program::render(int input, float frameDuration)
+Entity::ID Program::spawnEntity(YX<float> pos, YX<float> vel, int health, std::shared_ptr<Sprite>& sprite)
+{
+  Entity e{pos, vel, health, sprite};
+  auto id = e.id();
+  m_entities.insert({e.id(), std::move(e)});
+  return id;
+}
+
+void Program::render(float frameDuration)
 {
   wclear(stdscr);
   wclear(m_arenaWin);
@@ -145,11 +154,11 @@ void Program::render(int input, float frameDuration)
     }
   }
 
-  // int framerate = 1.f / frameDuration;
-  // mvprintw(0, 0, "ts[%f]", frameDuration);
-  // mvprintw(1, 0, "shipYX[%f, %f]", entities[entityIDs.ship].pos.y, entities[entityIDs.ship].pos.x);
-  // mvprintw(2, 0, "bulletCount[%lu]", bulletIDs.size());
-  // mvprintw(3, 0, "framerate[%i]", framerate);
+  int framerate = 1.f / frameDuration;
+  mvprintw(0, 0, "ts[%f]", frameDuration);
+  mvprintw(1, 0, "shipYX[%f, %f]", m_entities.at(m_entityIDs.ship).position().y, m_entities.at(m_entityIDs.ship).position().x);
+  mvprintw(2, 0, "bulletCount[%lu]", m_entityIDs.bullets.size());
+  mvprintw(3, 0, "framerate[%i]", framerate);
 
   refresh();
   wrefresh(m_arenaBorderWin);
@@ -191,21 +200,22 @@ void Program::logic(int input, float timeStep)
 
   // Move ship and Spawn bullets
   Entity& shipEntity = m_entities.at(m_entityIDs.ship);
-  YX<float> leftShipCollider{shipEntity.position()};
-  YX<float> rightShipCollider{shipEntity.position().y, shipEntity.position().x + shipEntity.sprite().size().x - 1};
+  // leftShipCollider.x -= 16.f * ts;
+  // shipEntity.position().x -= 16.f * ts;
+  YX<float> rightShipCollider = shipEntity.position();
+  YX<float> leftShipCollider{
+    .y = rightShipCollider.y - shipEntity.sprite().size().y + 1,
+    .x = rightShipCollider.x - shipEntity.sprite().size().x + 1,
+  };
   static auto lastShot{std::chrono::steady_clock::now()};
   switch(input) {
     case ';':
-      rightShipCollider.x += 16.f * ts;
-      if(m_collisionBuffer.at(rightShipCollider) == 0) {
-        shipEntity.position().x += 16.f * ts;
+      auto collider = rightShipCollider;
+      collider.x += 16.f * ts;
+      if(m_collisionBuffer.at(collider) == CollisionBuffer::Empty) {
       }
       break;
     case 'j':
-      leftShipCollider.x -= 16.f * ts;
-      if(m_collisionBuffer.at(leftShipCollider) == 0) {
-        shipEntity.position().x -= 16.f * ts;
-      }
       break;
     case ' ':
       auto now = std::chrono::steady_clock::now();
@@ -215,12 +225,12 @@ void Program::logic(int input, float timeStep)
         static bool side{};
         int health = 3;
         YX<float> position{
-          .y = shipEntity.position().y - (shipEntity.sprite().size().y / 2.0f) + 1,
-          .x = shipEntity.position().x + side + (shipEntity.sprite().size().x / 2.0f) - 1,
+          .y = shipEntity.position().y - (shipEntity.sprite().size().y / 2.0f) - 1,
+          .x = shipEntity.position().x + side + (shipEntity.sprite().size().x / 2.0f - 1),
         };
         YX<float> velocity = {8, 0};
-        Entity bullet{position, velocity, health, m_sprites.shipBullet};
-        m_entityIDs.bullets.push_back(bullet.id());
+        Entity::ID id = spawnEntity(position, velocity, health, m_sprites.shipBullet);
+        m_entityIDs.bullets.push_back(id);
         side = !side;
       }
       break;
@@ -231,7 +241,7 @@ void Program::logic(int input, float timeStep)
     m_collisionBuffer.clear(alienID);
     auto& alien = m_entities.at(alienID);
     alien.position().x += (m_alienVelocity.x) * ts;
-    //    alien.pos.y += (alienVelocity.y + alienSpeedIntensifier) * ts;
+    // alien.pos.y += (alienVelocity.y + alienSpeedIntensifier) * ts;
     m_collisionBuffer.setCollision(alienID);
   }
 
@@ -245,6 +255,7 @@ void Program::logic(int input, float timeStep)
   }
 
   // mvprintw(4, 0, "groupMovement[%f]", groupMovement);
+  // mvprintw(5, 0, "vel[%f, %f]", m_alienVelocity.y, m_alienVelocity.x);
   // mvprintw(5, 0, "vel[%f, %f]", m_alienVelocity.y, m_alienVelocity.x);
 
   // Move bullets
@@ -327,10 +338,10 @@ void Program::run()
     int input = getch();
     logic(input, frameDuration.count());
 
-    // if(frameDuration < minimunTimeStep)
-    //   std::this_thread::sleep_for(minimunTimeStep - frameDuration);
+    if(frameDuration < minimunTimeStep)
+      std::this_thread::sleep_for(minimunTimeStep - frameDuration);
 
-    render(input, frameDuration.count());
+    render(frameDuration.count());
   }
 
   // int input{};

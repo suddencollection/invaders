@@ -6,6 +6,11 @@
 #include <unordered_map>
 #include <vector>
 
+class Collider
+{
+private:
+};
+
 class CollisionBuffer
 {
 public:

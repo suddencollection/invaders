@@ -28,8 +28,10 @@ private:
 
   // void loadArena(Path sprites_path);
   void drawSprite(WINDOW* win, Entity& entity);
-  void render(int input, float frameDuration);
+  void render(float frameDuration);
   void logic(int input, float ts);
+
+  auto spawnEntity(YX<float> pos, YX<float> vel, int health, std::shared_ptr<Sprite>& sprite) -> Entity::ID;
 
 private:
   // Windows
