@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <cmath>
-#include <iostream>
 #include <thread>
 
 Program::Program(std::filesystem::path sprites_path)
@@ -29,8 +28,9 @@ void Program::initCurses()
   use_default_colors();
   curs_set(0);
 
-  init_pair(1, -1, COLOR_RED);
-  init_pair(2, -1, COLOR_BLACK);
+  init_pair(1, -1, COLOR_MAGENTA);
+  init_pair(2, -1, COLOR_GREEN);
+  init_pair(3, -1, COLOR_WHITE);
 }
 
 void Program::createWindows()
@@ -51,9 +51,7 @@ void Program::loadSprites(Path path)
   m_sprites.shipBullet = std::make_shared<Sprite>(path / "shipBullet");
 
   for(int line{}; line < m_alienFormation.y; ++line) {
-    for(int column{}; column < m_alienFormation.x; ++column) {
-      m_sprites.aliens.push_back(std::make_shared<Sprite>(path / ("alien" + std::to_string(line))));
-    }
+    m_sprites.aliens.push_back(std::make_shared<Sprite>(path / ("alien" + std::to_string(line))));
   }
 }
 
@@ -68,49 +66,40 @@ void Program::createEntities()
   YX<float> vel = {0, 0};
   Entity ship{pos, vel, health, m_sprites.ship};
   m_entityIDs.ship = ship.id();
-  m_entities.insert({m_entityIDs.ship, std::move(ship)});
+  m_entities.emplace(m_entityIDs.ship, std::move(ship));
 
   // aliens
   YX<int> alienPos{m_alienStartingPoint};
-  for(int line{}; line < m_alienFormation.y; ++line) {
-    for(int column{}; column < m_alienFormation.x; ++column) {
-      // create an entity
+  for(int y = 0; y < m_alienFormation.y; ++y) {
+    for(int x = 0; x < m_alienFormation.x; ++x) {
+      // create an entity and registers it
       pos = {static_cast<float>(alienPos.y), static_cast<float>(alienPos.x)};
       vel = {0, 1};
       health = 1;
-      Entity alien{pos, vel, health, m_sprites.aliens[line]};
-      alien.position().x += alien.sprite().size().x + 2;
+      Entity::ID id = spawnEntity(pos, vel, health, m_sprites.aliens[y]);
+      m_entityIDs.aliens.push_back(id);
 
-      // registers it
-      m_entityIDs.aliens.push_back(alien.id());
-      m_entities.insert({alien.id(), std::move(alien)});
+      // shifts positions for the next column
+      alienPos.x += m_sprites.aliens[y]->size().x + 2;
     }
-
     // shifts positions for the next line
-    alienPos.y += m_sprites.aliens[line]->size().y + 1;
+    alienPos.y += m_sprites.aliens[y]->size().y + 2;
     alienPos.x = m_alienStartingPoint.x;
   }
 }
 
 void Program::setCollisions()
 {
-  m_collisionBuffer.resize(m_arenaSize);
-
   // ship
-  m_collisionBuffer.setCollision(m_entityIDs.ship);
+  m_collisionBuffer.add(m_entityIDs.ship);
 
   // aliens
   for(Entity::ID e : m_entityIDs.aliens) {
-    m_collisionBuffer.setCollision(e);
+    m_collisionBuffer.add(e);
   }
 
   // wall
-  int my{getmaxy(m_arenaWin) - 1};
-  int mx{getmaxx(m_arenaWin) - 1};
-  m_collisionBuffer.setCollision(YX<int>{0, 0}, {0, mx}, -1);   // top
-  m_collisionBuffer.setCollision(YX<int>{my, 0}, {my, mx}, -1); // bottom
-  m_collisionBuffer.setCollision(YX<int>{0, 0}, {my, 0}, -1);   // left
-  m_collisionBuffer.setCollision(YX<int>{0, mx}, {my, mx}, -1); // right
+  paintBorders();
 }
 
 void Program::endCurses()
@@ -141,16 +130,20 @@ void Program::render(float frameDuration)
   }
 
   // Draw Collisions
+  bool checkerboard = false;
   if(m_drawCollisions) {
     for(int y{}; y < getmaxy(m_arenaWin); ++y) {
       for(int x{}; x < getmaxx(m_arenaWin); ++x) {
         wmove(m_arenaWin, y, x);
-        if(m_collisionBuffer.at(YX<int>{y, x}) != 0) {
+        if(m_collisionBuffer.at(YX<int>{y, x}) != CollisionBuffer::Empty) {
           waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(1));
         } else {
-          waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(2));
+          waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(2 + checkerboard));
         }
+
+        checkerboard = !checkerboard;
       }
+      checkerboard = !checkerboard;
     }
   }
 
@@ -159,6 +152,10 @@ void Program::render(float frameDuration)
   mvprintw(1, 0, "shipYX[%f, %f]", m_entities.at(m_entityIDs.ship).position().y, m_entities.at(m_entityIDs.ship).position().x);
   mvprintw(2, 0, "bulletCount[%lu]", m_entityIDs.bullets.size());
   mvprintw(3, 0, "framerate[%i]", framerate);
+  mvprintw(4, 0, "alienCount[%i]", m_entityIDs.aliens.size());
+  auto it = m_entityIDs.aliens.begin();
+  mvprintw(5, 0, "alienIDs[%i, %i, %i]", *it, *(++it), *(++it));
+  mvprintw(6, 0, "spriteSize[%i]", m_sprites.aliens[0]->size().x);
 
   refresh();
   wrefresh(m_arenaBorderWin);
@@ -184,6 +181,16 @@ void Program::drawSprite(WINDOW* win, Entity& entity)
   }
 }
 
+void Program::paintBorders()
+{
+  int my{getmaxy(m_arenaWin) - 1};
+  int mx{getmaxx(m_arenaWin) - 1};
+  m_collisionBuffer.paint(YX<int>{0, 0}, YX<int>{0, mx});
+  m_collisionBuffer.paint(YX<int>{my, 0}, YX<int>{my, mx});
+  m_collisionBuffer.paint(YX<int>{0, 0}, YX<int>{my, 0});
+  m_collisionBuffer.paint(YX<int>{0, mx}, YX<int>{my, mx});
+}
+
 void Program::logic(int input, float timeStep)
 {
   auto& ts = timeStep;
@@ -202,20 +209,25 @@ void Program::logic(int input, float timeStep)
   Entity& shipEntity = m_entities.at(m_entityIDs.ship);
   // leftShipCollider.x -= 16.f * ts;
   // shipEntity.position().x -= 16.f * ts;
-  YX<float> rightShipCollider = shipEntity.position();
-  YX<float> leftShipCollider{
-    .y = rightShipCollider.y - shipEntity.sprite().size().y + 1,
-    .x = rightShipCollider.x - shipEntity.sprite().size().x + 1,
-  };
   static auto lastShot{std::chrono::steady_clock::now()};
+
+  auto moveShip = [&, this](int direction) {
+    shipEntity.position().x += direction * ts * 16.f;
+    std::vector<Entity::ID> collisions = m_collisionBuffer.collides(shipEntity.id());
+    for(auto& e : collisions) {
+      if(e != shipEntity.id()) {
+        shipEntity.position().x += -direction * ts * 16.f;
+        break;
+      }
+    }
+  };
+
   switch(input) {
     case ';':
-      auto collider = rightShipCollider;
-      collider.x += 16.f * ts;
-      if(m_collisionBuffer.at(collider) == CollisionBuffer::Empty) {
-      }
+      moveShip(1);
       break;
     case 'j':
+      moveShip(-1);
       break;
     case ' ':
       auto now = std::chrono::steady_clock::now();
@@ -238,11 +250,9 @@ void Program::logic(int input, float timeStep)
 
   // move aliens
   for(auto& alienID : m_entityIDs.aliens) {
-    m_collisionBuffer.clear(alienID);
     auto& alien = m_entities.at(alienID);
     alien.position().x += (m_alienVelocity.x) * ts;
     // alien.pos.y += (alienVelocity.y + alienSpeedIntensifier) * ts;
-    m_collisionBuffer.setCollision(alienID);
   }
 
   static int direction{1};
@@ -254,9 +264,9 @@ void Program::logic(int input, float timeStep)
     direction = -direction;
   }
 
-  // mvprintw(4, 0, "groupMovement[%f]", groupMovement);
-  // mvprintw(5, 0, "vel[%f, %f]", m_alienVelocity.y, m_alienVelocity.x);
-  // mvprintw(5, 0, "vel[%f, %f]", m_alienVelocity.y, m_alienVelocity.x);
+  // mvprintw(7, 0, "groupMovement[%f]", groupMovement);
+  // mvprintw(8, 0, "vel[%f, %f]", m_alienVelocity.y, m_alienVelocity.x);
+
 
   // Move bullets
   for(auto& bulletID : m_entityIDs.bullets) {
@@ -294,7 +304,7 @@ void Program::logic(int input, float timeStep)
   {
     auto& alien = m_entities.at(alienID);
     if(alien.health() == 0) {
-      m_collisionBuffer.clear(alienID);
+      m_collisionBuffer.remove(alienID);
       m_entities.erase(alienID);
 
       // Small alien groups should be faster
@@ -317,6 +327,9 @@ void Program::logic(int input, float timeStep)
 
   if(m_entities.at(m_entityIDs.ship).health() == 0)
     m_gameState = GameState::lose;
+
+  m_collisionBuffer.update();
+  paintBorders();
 }
 
 void Program::run()

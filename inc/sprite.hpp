@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <string>
+#include <utility>
 
 class Sprite
 {
@@ -21,6 +22,6 @@ private:
   void storeSize();
 
 private:
-  YX<int> m_size{};
-  std::wstring m_buffer{};
+  YX<int> m_size{-1, -1};
+  std::string m_buffer{};
 };

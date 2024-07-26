@@ -1,5 +1,6 @@
 #include "sprite.hpp"
 
+#include <cassert>
 #include <fstream>
 
 wchar_t Sprite::operator[](int index)
@@ -9,16 +10,20 @@ wchar_t Sprite::operator[](int index)
 
 YX<int> Sprite::size()
 {
+  assert(m_size.y != -1 && m_size.x != -1);
   return m_size;
 }
 
 int Sprite::bufferSize()
 {
-  return m_size.y * (m_size.x + 1);
+  // return m_size.y * (m_size.x + 1);
+  return m_buffer.size();
 }
 
 void Sprite::storeSize()
 {
+  m_size = {0, 0};
+
   // count width
   for(size_t i{}; i < m_buffer.length(); ++i) {
     if(m_buffer[i] == '\n') {

@@ -32,6 +32,7 @@ private:
   void logic(int input, float ts);
 
   auto spawnEntity(YX<float> pos, YX<float> vel, int health, std::shared_ptr<Sprite>& sprite) -> Entity::ID;
+  void paintBorders();
 
 private:
   // Windows

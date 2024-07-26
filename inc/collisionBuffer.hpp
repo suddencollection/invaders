@@ -1,7 +1,6 @@
 #pragma once
 
 #include "entity.hpp"
-#include "yx.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -18,17 +17,25 @@ public:
   static constexpr int Invalid = -1;
 
   CollisionBuffer(std::unordered_map<Entity::ID, Entity>& entities);
-  void resize(YX<int> size);
-  void setCollision(Entity::ID e);
-  void setCollision(YX<int> pos1, YX<int> pos2, Entity::ID e);
-  void setCollision(YX<float> pos1, YX<float> pos2, Entity::ID e);
-  void clear(Entity::ID e);
-  void clear(YX<int> pos1, YX<int> pos2);
-  void clear(YX<float> pos1, YX<float> pos2);
-  auto at(YX<int> index) -> int;
-  auto at(YX<float> index) -> int;
+
+  void add(Entity::ID);
+  void paint(YX<int> start, YX<int> end);
+  void remove(Entity::ID);
+  auto at(YX<int>) -> Entity::ID;
+  auto at(YX<float>) -> Entity::ID;
+  auto collides(Entity::ID id) -> std::vector<Entity::ID>;
+  void update();
+
+  // auto at(YX<int> index) -> int;
+  // auto at(YX<float> index) -> int;
 
 private:
+  void map_entity(Entity::ID);
+  void unmap_entity(Entity::ID);
+  // void set_collision(YX<int> pos);
+  void for_each_cell(Entity::ID, std::function<void(YX<int>)>);
+
   std::unordered_map<Entity::ID, Entity>& m_entities;
-  std::vector<std::vector<int>> m_rows;
+  std::vector<Entity::ID> m_collidersIDs;
+  std::unordered_map<YX<int>, Entity::ID> m_cells;
 };

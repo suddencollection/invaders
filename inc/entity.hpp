@@ -1,7 +1,6 @@
 #pragma once
 
 #include "sprite.hpp"
-#include "yx.hpp"
 
 #include <cassert>
 #include <stack>
@@ -37,7 +36,6 @@ private:
   YX<float> m_velocity{0, 0};
   int m_health{1};
   std::shared_ptr<Sprite> m_sprite; // the easy way
-  Collider m_collider;
 
   static std::stack<ID> m_availableIDs;
   static int genID()
