@@ -23,7 +23,6 @@ private:
   void createWindows();
   void loadSprites(Path path);
   void createEntities();
-  void setCollisions();
   void endCurses();
 
   // void loadArena(Path sprites_path);
@@ -66,7 +65,7 @@ private:
   YX<float> m_alienPosOffset;
   YX<float> m_alienVelocity{0, 1};
   YX<int> m_alienStartingPoint{3, 9};
-  bool m_drawCollisions = false;
+  bool m_debugMode = false;
 
   enum class GameState
   {

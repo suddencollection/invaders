@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <iostream>
 #include <thread>
 
 Program::Program(std::filesystem::path sprites_path)
@@ -10,7 +11,6 @@ Program::Program(std::filesystem::path sprites_path)
   createWindows();
   loadSprites(sprites_path);
   createEntities();
-  setCollisions();
 }
 
 Program::~Program()
@@ -64,9 +64,7 @@ void Program::createEntities()
   };
   int health = 8;
   YX<float> vel = {0, 0};
-  Entity ship{pos, vel, health, m_sprites.ship};
-  m_entityIDs.ship = ship.id();
-  m_entities.emplace(m_entityIDs.ship, std::move(ship));
+  m_entityIDs.ship = spawnEntity(pos, vel, health, m_sprites.ship);
 
   // aliens
   YX<int> alienPos{m_alienStartingPoint};
@@ -88,20 +86,6 @@ void Program::createEntities()
   }
 }
 
-void Program::setCollisions()
-{
-  // ship
-  m_collisionBuffer.add(m_entityIDs.ship);
-
-  // aliens
-  for(Entity::ID e : m_entityIDs.aliens) {
-    m_collisionBuffer.add(e);
-  }
-
-  // wall
-  paintBorders();
-}
-
 void Program::endCurses()
 {
   endwin();
@@ -113,7 +97,8 @@ Entity::ID Program::spawnEntity(YX<float> pos, YX<float> vel, int health, std::s
 {
   Entity e{pos, vel, health, sprite};
   auto id = e.id();
-  m_entities.insert({e.id(), std::move(e)});
+  m_collisionBuffer.add(id);
+  m_entities.emplace(id, std::move(e));
   return id;
 }
 
@@ -124,14 +109,10 @@ void Program::render(float frameDuration)
   box(m_arenaBorderWin, 0, 0);
   // box(arenaWin, 0, 0);
 
-  // Draw sprites
-  for(auto& e : m_entities) {
-    drawSprite(m_arenaWin, e.second);
-  }
-
-  // Draw Collisions
+  // Debug
   bool checkerboard = false;
-  if(m_drawCollisions) {
+  if(m_debugMode) {
+    // Draw Collisions
     for(int y{}; y < getmaxy(m_arenaWin); ++y) {
       for(int x{}; x < getmaxx(m_arenaWin); ++x) {
         wmove(m_arenaWin, y, x);
@@ -145,17 +126,22 @@ void Program::render(float frameDuration)
       }
       checkerboard = !checkerboard;
     }
+    int framerate = 1.f / frameDuration;
+    mvprintw(0, 0, "ts[%f]", frameDuration);
+    mvprintw(1, 0, "shipYX[%f, %f]", m_entities.at(m_entityIDs.ship).position().y, m_entities.at(m_entityIDs.ship).position().x);
+    mvprintw(2, 0, "bulletCount[%lu]", m_entityIDs.bullets.size());
+    mvprintw(3, 0, "framerate[%i]", framerate);
+    mvprintw(4, 0, "alienCount[%i]", m_entityIDs.aliens.size());
+    auto it = m_entityIDs.aliens.begin();
+    mvprintw(5, 0, "alienIDs[%i, %i, %i]", *it, *(++it), *(++it));
+    mvprintw(6, 0, "spriteSize[%i]", m_sprites.aliens[0]->size().x);
+  } else {
+    // Draw sprites
+    for(auto& e : m_entities) {
+      drawSprite(m_arenaWin, e.second);
+    }
   }
 
-  int framerate = 1.f / frameDuration;
-  mvprintw(0, 0, "ts[%f]", frameDuration);
-  mvprintw(1, 0, "shipYX[%f, %f]", m_entities.at(m_entityIDs.ship).position().y, m_entities.at(m_entityIDs.ship).position().x);
-  mvprintw(2, 0, "bulletCount[%lu]", m_entityIDs.bullets.size());
-  mvprintw(3, 0, "framerate[%i]", framerate);
-  mvprintw(4, 0, "alienCount[%i]", m_entityIDs.aliens.size());
-  auto it = m_entityIDs.aliens.begin();
-  mvprintw(5, 0, "alienIDs[%i, %i, %i]", *it, *(++it), *(++it));
-  mvprintw(6, 0, "spriteSize[%i]", m_sprites.aliens[0]->size().x);
 
   refresh();
   wrefresh(m_arenaBorderWin);
@@ -196,21 +182,13 @@ void Program::logic(int input, float timeStep)
   auto& ts = timeStep;
 
   // Show Collisions
-  switch(input) {
-    case '1':
-      m_drawCollisions = false;
-      break;
-    case '2':
-      m_drawCollisions = true;
-      break;
+  if(input == '1') {
+    m_debugMode = !m_debugMode;
   }
 
   // Move ship and Spawn bullets
   Entity& shipEntity = m_entities.at(m_entityIDs.ship);
-  // leftShipCollider.x -= 16.f * ts;
-  // shipEntity.position().x -= 16.f * ts;
   static auto lastShot{std::chrono::steady_clock::now()};
-
   auto moveShip = [&, this](int direction) {
     shipEntity.position().x += direction * ts * 16.f;
     std::vector<Entity::ID> collisions = m_collisionBuffer.collides(shipEntity.id());
@@ -221,7 +199,6 @@ void Program::logic(int input, float timeStep)
       }
     }
   };
-
   switch(input) {
     case ';':
       moveShip(1);
@@ -237,7 +214,7 @@ void Program::logic(int input, float timeStep)
         static bool side{};
         int health = 3;
         YX<float> position{
-          .y = shipEntity.position().y - (shipEntity.sprite().size().y / 2.0f) - 1,
+          .y = shipEntity.position().y - (shipEntity.sprite().size().y / 2.0f) + 1, // (+1) the bullet will be moved latter in this function
           .x = shipEntity.position().x + side + (shipEntity.sprite().size().x / 2.0f - 1),
         };
         YX<float> velocity = {8, 0};
@@ -254,7 +231,6 @@ void Program::logic(int input, float timeStep)
     alien.position().x += (m_alienVelocity.x) * ts;
     // alien.pos.y += (alienVelocity.y + alienSpeedIntensifier) * ts;
   }
-
   static int direction{1};
   static float groupMovement{0.f};
   groupMovement += m_alienVelocity.x * ts;
@@ -263,10 +239,6 @@ void Program::logic(int input, float timeStep)
     // alienVelocity.y *= -1;
     direction = -direction;
   }
-
-  // mvprintw(7, 0, "groupMovement[%f]", groupMovement);
-  // mvprintw(8, 0, "vel[%f, %f]", m_alienVelocity.y, m_alienVelocity.x);
-
 
   // Move bullets
   for(auto& bulletID : m_entityIDs.bullets) {
@@ -277,7 +249,7 @@ void Program::logic(int input, float timeStep)
 
     // YX<int> bulletPos{static_cast<int>(bullet.pos.y), static_cast<int>(bullet.pos.x)};
     int hit = m_collisionBuffer.at(bullet.position());
-    if(hit != CollisionBuffer::Empty) {
+    if(hit != CollisionBuffer::Empty && hit != bulletID) {
       if(hit != CollisionBuffer::Invalid) {
         auto it = m_entities.find(hit);
         it->second.health() -= 1;
@@ -287,26 +259,28 @@ void Program::logic(int input, float timeStep)
     }
   }
 
-  // Erase Dead Entities
+  // Erase Dead Entities (Bullets)
   std::vector<Entity::ID> bulletsToErase{};
-  std::vector<Entity::ID> aliensToErase{};
-
   for(auto& bulletID : m_entityIDs.bullets) // destroy bullets with health 0
   {
     auto& bullet = m_entities.at(bulletID);
     if(bullet.health() == 0) {
-      m_entities.erase(bulletID);
       bulletsToErase.push_back(bulletID);
     }
   }
 
+  for(auto& id : bulletsToErase) {
+    m_collisionBuffer.remove(id);
+    m_entities.erase(id);
+    m_entityIDs.bullets.remove(id);
+  }
+
+  // Erase Dead Entities (Aliens)
+  std::vector<Entity::ID> aliensToErase{};
   for(auto& alienID : m_entityIDs.aliens) // destroy aliens with health 0
   {
     auto& alien = m_entities.at(alienID);
     if(alien.health() == 0) {
-      m_collisionBuffer.remove(alienID);
-      m_entities.erase(alienID);
-
       // Small alien groups should be faster
       aliensToErase.push_back(alienID);
       if(m_alienVelocity.x > 0)
@@ -316,14 +290,15 @@ void Program::logic(int input, float timeStep)
     }
   }
 
-  for(auto& id : aliensToErase)
+  for(auto& id : aliensToErase) {
+    m_collisionBuffer.remove(id);
+    m_entities.erase(id);
     m_entityIDs.aliens.remove(id);
+  }
 
-  for(auto& id : bulletsToErase)
-    m_entityIDs.bullets.remove(id);
-
-  if(m_entityIDs.aliens.size() == 0)
+  if(m_entityIDs.aliens.size() == 0) {
     m_gameState = GameState::won;
+  }
 
   if(m_entities.at(m_entityIDs.ship).health() == 0)
     m_gameState = GameState::lose;
