@@ -28,9 +28,14 @@ void Program::initCurses()
   use_default_colors();
   curs_set(0);
 
-  init_pair(1, -1, COLOR_MAGENTA);
-  init_pair(2, -1, COLOR_GREEN);
-  init_pair(3, -1, COLOR_WHITE);
+  init_pair(0, COLOR_BLACK, -1);
+  init_pair(1, COLOR_RED, -1);
+  init_pair(2, COLOR_GREEN, -1);
+  init_pair(3, COLOR_YELLOW, -1);
+  init_pair(4, COLOR_BLUE, -1);
+  init_pair(5, COLOR_MAGENTA, -1);
+  init_pair(6, COLOR_CYAN, -1);
+  init_pair(7, COLOR_WHITE, -1);
 }
 
 void Program::createWindows()
@@ -43,6 +48,8 @@ void Program::createWindows()
     m_arenaSize.x + 2,
     (LINES - m_arenaSize.y) / 2 - 1,
     (COLS - m_arenaSize.x) / 2 - 1);
+
+  m_framebuffer.resize(getmaxx(m_arenaWin) * getmaxy(m_arenaWin));
 }
 
 void Program::loadSprites(Path path)
@@ -73,7 +80,7 @@ void Program::createEntities()
       // create an entity and registers it
       pos = {static_cast<float>(alienPos.y), static_cast<float>(alienPos.x)};
       vel = {0, 1};
-      health = 1;
+      health = 3;
       Entity::ID id = spawnEntity(pos, vel, health, m_sprites.aliens[y]);
       m_entityIDs.aliens.push_back(id);
 
@@ -102,6 +109,23 @@ Entity::ID Program::spawnEntity(YX<float> pos, YX<float> vel, int health, std::s
   return id;
 }
 
+bool Program::updateFramebuffer()
+{
+  // Output is buffered. If there are any changes from the previous one, it is printed
+  // This is done to avoid flickering and unneded screen updates
+  std::vector<chtype> buffer{};
+  buffer.resize(m_framebuffer.size());
+  for(auto& e : m_entities) {
+    drawSprite(buffer, e.second);
+  }
+
+  if(buffer != m_framebuffer) {
+    m_framebuffer = buffer;
+    return true;
+  }
+  return false;
+}
+
 void Program::render(float frameDuration)
 {
   wclear(stdscr);
@@ -117,9 +141,9 @@ void Program::render(float frameDuration)
       for(int x{}; x < getmaxx(m_arenaWin); ++x) {
         wmove(m_arenaWin, y, x);
         if(m_collisionBuffer.at(YX<int>{y, x}) != CollisionBuffer::Empty) {
-          waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(1));
+          waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(COLOR_BLACK));
         } else {
-          waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(2 + checkerboard));
+          waddch(m_arenaWin, ACS_CKBOARD | COLOR_PAIR(COLOR_CYAN + checkerboard));
         }
 
         checkerboard = !checkerboard;
@@ -138,34 +162,70 @@ void Program::render(float frameDuration)
   } else {
     // Draw sprites
     for(auto& e : m_entities) {
-      drawSprite(m_arenaWin, e.second);
+      auto& entity = e.second;
+      YX<int> drawingPoint{
+        .y = drawingPoint.y = std::round(entity.position().y),
+        .x = drawingPoint.x = std::round(entity.position().x),
+      };
+      wmove(m_arenaWin, drawingPoint.y, drawingPoint.x);
+
+      for(int i{}; i < entity.sprite().bufferSize(); ++i) {
+        if(entity.sprite()[i] == '\n') {
+          ++drawingPoint.y;
+          wmove(m_arenaWin, drawingPoint.y, drawingPoint.x);
+          continue;
+        }
+
+        waddch(m_arenaWin, entity.sprite()[i]);
+      }
+      // flick = !flick;
+      // drawSprite(m_arenaWin, e.second);
     }
   }
-
 
   refresh();
   wrefresh(m_arenaBorderWin);
   wrefresh(m_arenaWin);
 }
 
-void Program::drawSprite(WINDOW* win, Entity& entity)
+void Program::drawSprite(std::vector<chtype>& buffer, Entity& entity)
 {
   YX<int> drawingPoint{
     .y = drawingPoint.y = std::round(entity.position().y),
     .x = drawingPoint.x = std::round(entity.position().x),
   };
-  wmove(win, drawingPoint.y, drawingPoint.x);
 
   for(int i{}; i < entity.sprite().bufferSize(); ++i) {
     if(entity.sprite()[i] == '\n') {
       ++drawingPoint.y;
-      wmove(win, drawingPoint.y, drawingPoint.x);
+      buffer[drawingPoint.y * getmaxy(m_arenaWin) + drawingPoint.x] = (entity.sprite()[i]);
       continue;
     }
-
-    waddch(win, entity.sprite()[i]);
   }
+  // flick = !flick;
 }
+
+// void Program::drawSprite(WINDOW* win, Entity& entity)
+// {
+//   static bool flick = 0;
+//   YX<int> drawingPoint{
+//     .y = drawingPoint.y = std::round(entity.position().y),
+//     .x = drawingPoint.x = std::round(entity.position().x),
+//   };
+//   wmove(win, drawingPoint.y, drawingPoint.x);
+//
+//   for(int i{}; i < entity.sprite().bufferSize(); ++i) {
+//     if(entity.sprite()[i] == '\n') {
+//       ++drawingPoint.y;
+//       wmove(win, drawingPoint.y, drawingPoint.x);
+//       continue;
+//     }
+//
+//     init_pair(1, COLOR_RED + flick, -1);
+//     waddch(win, entity.sprite()[i] | COLOR_PAIR(1));
+//   }
+//   // flick = !flick;
+// }
 
 void Program::paintBorders()
 {
@@ -177,13 +237,20 @@ void Program::paintBorders()
   m_collisionBuffer.paint(YX<int>{0, mx}, YX<int>{my, mx});
 }
 
-void Program::logic(int input, float timeStep)
+void Program::logic(int input, float timeStep, bool& force)
 {
   auto& ts = timeStep;
 
   // Show Collisions
   if(input == '1') {
     m_debugMode = !m_debugMode;
+    force = true;
+  }
+
+  // Exit
+  if(input == 'q') {
+    m_gameState = GameState::quitted;
+    return;
   }
 
   // Move ship and Spawn bullets
@@ -240,7 +307,7 @@ void Program::logic(int input, float timeStep)
     direction = -direction;
   }
 
-  // Move bullets
+  // Move bullets and handle colors
   for(auto& bulletID : m_entityIDs.bullets) {
     auto& bullet = m_entities.at(bulletID);
 
@@ -251,10 +318,8 @@ void Program::logic(int input, float timeStep)
     int hit = m_collisionBuffer.at(bullet.position());
     if(hit != CollisionBuffer::Empty && hit != bulletID) {
       if(hit != CollisionBuffer::Invalid) {
-        auto it = m_entities.find(hit);
-        it->second.health() -= 1;
+        m_entities.at(hit).health() -= 1;
       }
-
       bullet.health() = 0;
     }
   }
@@ -311,57 +376,37 @@ void Program::run()
 {
   auto& now{std::chrono::steady_clock::now};
   using Duration = std::chrono::duration<float>;
-  auto startTime = now();
-  auto endTime = now();
-  Duration frameDuration{};
-  Duration minimunTimeStep{0.0208333}; //{0.041};
+  auto updateStartTime = now();
+  auto renderStartTime = now();
+  auto updateEndTime = now();
+  auto renderEndTime = now();
+  Duration frameCounter{0};
+  Duration updateDuration{};
+  Duration minimunTimeStep{1 / 48}; // 48 updates per second
 
-  while(true) {
-    // time since the last frame
-    endTime = now();
-    frameDuration = endTime - startTime;
-    startTime = endTime;
+  int input{};
+  while(input != 'q') {
+    // time since the last update
+    updateEndTime = now();
+    updateDuration = updateEndTime - updateStartTime;
+    updateStartTime = updateEndTime;
 
     // input and processing
-    int input = getch();
-    logic(input, frameDuration.count());
+    input = getch();
+    bool forceRender = false;
+    logic(input, updateDuration.count(), forceRender);
+    // impose a limit on UPS (updates per second)
+    // kinda necessary because only individual keystrokes are registered in the terminal
+    if(updateDuration < minimunTimeStep) {
+      std::this_thread::sleep_for(minimunTimeStep - updateDuration);
+    }
 
-    if(frameDuration < minimunTimeStep)
-      std::this_thread::sleep_for(minimunTimeStep - frameDuration);
-
-    render(frameDuration.count());
+    renderEndTime = now();
+    frameCounter += renderEndTime - renderStartTime;
+    renderStartTime = renderEndTime;
+    if(frameCounter > std::chrono::milliseconds(1000 / 24)) {
+      render(frameCounter.count());
+      frameCounter = {};
+    }
   }
-
-  // int input{};
-  // while(gameState == GameState::running) {
-  //   endTime = now();
-  //   frameDuration = endTime - startTime;
-  //   startTime = endTime;
-  //
-  //   input = getch();
-  //   logic(input, frameDuration.count());
-  //
-  //   if(frameDuration < minimunTimeStep)
-  //     std::this_thread::sleep_for(minimunTimeStep - frameDuration);
-  //
-  //   render(input, frameDuration.count());
-  //
-  //   if(input == 'q')
-  //     gameState = GameState::quitted;
-  // }
-  //
-  // nodelay(stdscr, false);
-  //
-  // if(m_entities[m_entityIDs.ship].health() > 0 && m_entityIDs.aliens.size() == 0) {
-  //   "you won";
-  // } else if(entities[entityIDs.ship].health == 0 && alienIDs.size() > 0) {
-  //   "you lost";
-  // } else {
-  //   "draw?";
-  // }
-  //
-  // refresh();
-  // wrefresh(resultWin);
-  // while(getch() != '\n')
-  //   continue;
 }

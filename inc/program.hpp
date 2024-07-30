@@ -26,9 +26,11 @@ private:
   void endCurses();
 
   // void loadArena(Path sprites_path);
-  void drawSprite(WINDOW* win, Entity& entity);
+  // void drawSprite(WINDOW* win, Entity& entity);
+  void drawSprite(std::vector<chtype>& buffer, Entity& entity);
   void render(float frameDuration);
-  void logic(int input, float ts);
+  bool updateFramebuffer();
+  void logic(int input, float ts, bool& force);
 
   auto spawnEntity(YX<float> pos, YX<float> vel, int health, std::shared_ptr<Sprite>& sprite) -> Entity::ID;
   void paintBorders();
@@ -66,6 +68,7 @@ private:
   YX<float> m_alienVelocity{0, 1};
   YX<int> m_alienStartingPoint{3, 9};
   bool m_debugMode = false;
+  std::vector<chtype> m_framebuffer{};
 
   enum class GameState
   {
