@@ -58,9 +58,6 @@ private:
     std::list<Entity::ID> bullets{};
   } m_entityIDs;
 
-  // CollisionBuffer
-  CollisionBuffer m_collisionBuffer{m_entities};
-
   // Miscellaneous
   YX<int> m_arenaSize{32, 64};
   YX<int> m_alienFormation{5, 8};
@@ -78,4 +75,7 @@ private:
     lose,
     quitted,
   } m_gameState{GameState::running};
+
+  // CollisionBuffer
+  CollisionBuffer m_collisionBuffer{m_arenaSize, m_entities};
 };

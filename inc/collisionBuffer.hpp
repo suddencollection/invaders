@@ -5,18 +5,13 @@
 #include <unordered_map>
 #include <vector>
 
-class Collider
-{
-private:
-};
-
 class CollisionBuffer
 {
 public:
   static constexpr int Empty = 0;
   static constexpr int Invalid = -1;
 
-  CollisionBuffer(std::unordered_map<Entity::ID, Entity>& entities);
+  CollisionBuffer(YX<int> gridSize, std::unordered_map<Entity::ID, Entity>& entities);
 
   void add(Entity::ID);
   void paint(YX<int> start, YX<int> end);
@@ -25,6 +20,7 @@ public:
   auto at(YX<float>) -> Entity::ID;
   auto collides(Entity::ID id) -> std::vector<Entity::ID>;
   void update();
+  auto raycast(YX<float> rayStart, YX<float> rayDir) -> Entity::ID;
 
   // auto at(YX<int> index) -> int;
   // auto at(YX<float> index) -> int;
@@ -38,4 +34,5 @@ private:
   std::unordered_map<Entity::ID, Entity>& m_entities;
   std::vector<Entity::ID> m_collidersIDs;
   std::unordered_map<YX<int>, Entity::ID> m_cells;
+  YX<int> m_gridSize;
 };

@@ -30,3 +30,21 @@ struct std::hash<YX<T>>
     return s.y ^ (s.x << 1);
   }
 };
+
+template<typename T>
+YX<T> operator*(YX<T> const& l, float r)
+{
+  return YX<T>{
+    .y = l.y * r,
+    .x = l.x * r,
+  };
+}
+
+template<typename T>
+YX<T> operator+(YX<T> const& l, YX<T> r)
+{
+  return YX<T>{
+    .y = l.y + r.y,
+    .x = l.x + r.x,
+  };
+}
