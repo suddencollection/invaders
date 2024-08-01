@@ -65,7 +65,7 @@ private:
   YX<int> m_arenaSize{32, 64};
   YX<int> m_alienFormation{5, 8};
   YX<float> m_alienPosOffset;
-  YX<float> m_alienVelocity{0, 1};
+  YX<float> m_alienVelocity{0, 3};
   YX<int> m_alienStartingPoint{3, 9};
   bool m_debugMode = false;
   std::vector<chtype> m_framebuffer{};

@@ -80,7 +80,7 @@ void Program::createEntities()
       // create an entity and registers it
       pos = {static_cast<float>(alienPos.y), static_cast<float>(alienPos.x)};
       vel = {0, 1};
-      health = 3;
+      health = 1;
       Entity::ID id = spawnEntity(pos, vel, health, m_sprites.aliens[y]);
       m_entityIDs.aliens.push_back(id);
 
@@ -151,14 +151,12 @@ void Program::render(float frameDuration)
       checkerboard = !checkerboard;
     }
     int framerate = 1.f / frameDuration;
-    mvprintw(0, 0, "ts[%f]", frameDuration);
+    mvprintw(0, 0, "timestep[%f]", frameDuration);
     mvprintw(1, 0, "shipYX[%f, %f]", m_entities.at(m_entityIDs.ship).position().y, m_entities.at(m_entityIDs.ship).position().x);
     mvprintw(2, 0, "bulletCount[%lu]", m_entityIDs.bullets.size());
     mvprintw(3, 0, "framerate[%i]", framerate);
-    mvprintw(4, 0, "alienCount[%i]", m_entityIDs.aliens.size());
-    auto it = m_entityIDs.aliens.begin();
-    mvprintw(5, 0, "alienIDs[%i, %i, %i]", *it, *(++it), *(++it));
-    mvprintw(6, 0, "spriteSize[%i]", m_sprites.aliens[0]->size().x);
+    mvprintw(4, 0, "alienCount[%i]", static_cast<int>(m_entityIDs.aliens.size()));
+    mvprintw(5, 0, "alienVelocity[%f]", static_cast<float>(m_alienVelocity.x));
   } else {
     // Draw sprites
     for(auto& e : m_entities) {
@@ -253,7 +251,7 @@ void Program::logic(int input, float timeStep, bool& force)
     return;
   }
 
-  // Move ship and Spawn bullets
+  // Move ship and Spawn ship bullets
   Entity& shipEntity = m_entities.at(m_entityIDs.ship);
   static auto lastShot{std::chrono::steady_clock::now()};
   auto moveShip = [&, this](int direction) {
@@ -296,18 +294,17 @@ void Program::logic(int input, float timeStep, bool& force)
   for(auto& alienID : m_entityIDs.aliens) {
     auto& alien = m_entities.at(alienID);
     alien.position().x += (m_alienVelocity.x) * ts;
-    // alien.pos.y += (alienVelocity.y + alienSpeedIntensifier) * ts;
   }
   static int direction{1};
   static float groupMovement{0.f};
+  constexpr float whereFlip = 4.f;
   groupMovement += m_alienVelocity.x * ts;
-  if(groupMovement <= -4.f || groupMovement >= 4.f) {
+  if((groupMovement <= -whereFlip && m_alienVelocity.x < 0) || (groupMovement >= whereFlip && m_alienVelocity.x > 0)) {
     m_alienVelocity.x = m_alienVelocity.x * direction;
-    // alienVelocity.y *= -1;
     direction = -direction;
   }
 
-  // Move bullets and handle colors
+  // Move bullets
   for(auto& bulletID : m_entityIDs.bullets) {
     auto& bullet = m_entities.at(bulletID);
 
@@ -348,10 +345,11 @@ void Program::logic(int input, float timeStep, bool& force)
     if(alien.health() == 0) {
       // Small alien groups should be faster
       aliensToErase.push_back(alienID);
-      if(m_alienVelocity.x > 0)
-        m_alienVelocity.x += 0.125;
-      else
-        m_alienVelocity.x -= 0.125;
+      float increment = 0.250;
+      if(m_alienVelocity.x < 0) {
+        increment *= -1;
+      }
+      m_alienVelocity.x += increment;
     }
   }
 
@@ -361,13 +359,14 @@ void Program::logic(int input, float timeStep, bool& force)
     m_entityIDs.aliens.remove(id);
   }
 
+  // Winning/Losing conditions
   if(m_entityIDs.aliens.size() == 0) {
     m_gameState = GameState::won;
+  } else if(m_entities.at(m_entityIDs.ship).health() == 0) {
+    m_gameState = GameState::lose;
   }
 
-  if(m_entities.at(m_entityIDs.ship).health() == 0)
-    m_gameState = GameState::lose;
-
+  // Collisions
   m_collisionBuffer.update();
   paintBorders();
 }
@@ -382,17 +381,16 @@ void Program::run()
   auto renderEndTime = now();
   Duration frameCounter{0};
   Duration updateDuration{};
-  Duration minimunTimeStep{1 / 48}; // 48 updates per second
+  Duration minimunTimeStep{0.02083}; // 48 updates per second
 
-  int input{};
-  while(input != 'q') {
+  while(m_gameState == GameState::running) {
     // time since the last update
     updateEndTime = now();
     updateDuration = updateEndTime - updateStartTime;
     updateStartTime = updateEndTime;
 
     // input and processing
-    input = getch();
+    int input = getch();
     bool forceRender = false;
     logic(input, updateDuration.count(), forceRender);
     // impose a limit on UPS (updates per second)
