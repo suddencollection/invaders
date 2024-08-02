@@ -8,6 +8,7 @@
 #include <list>
 #include <memory>
 #include <optional>
+#include <random>
 
 class Program
 {
@@ -29,6 +30,8 @@ private:
   // void drawSprite(WINDOW* win, Entity& entity);
   void drawSprite(std::vector<chtype>& buffer, Entity& entity);
   void render(float frameDuration);
+  void startingScreen();
+  void endingScreen();
   bool updateFramebuffer();
   void logic(int input, float ts, bool& force);
 
@@ -66,6 +69,7 @@ private:
   YX<int> m_alienStartingPoint{3, 9};
   bool m_debugMode = false;
   std::vector<chtype> m_framebuffer{};
+  std::mt19937 m_random{};
 
   enum class GameState
   {

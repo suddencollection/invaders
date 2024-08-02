@@ -62,9 +62,7 @@ auto CollisionBuffer::collides(Entity::ID id) -> std::vector<Entity::ID>
 Entity::ID CollisionBuffer::raycast(YX<float> rayStart, YX<float> rayDir)
 {
   // Normalize
-  float width = std::sqrt(rayDir.y * rayDir.y + rayDir.x + rayDir.x);
-  rayDir.x /= width;
-  rayDir.y /= width;
+  rayDir.normalize();
 
   YX<float> rayUnitStepSize = {
     .y = std::sqrt((rayDir.x / rayDir.y) * (rayDir.x / rayDir.y) + 1),

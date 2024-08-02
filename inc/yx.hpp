@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <functional>
 #include <utility>
 
@@ -8,6 +9,14 @@ struct YX
 {
   T y{};
   T x{};
+
+  YX<T>& normalize()
+  {
+    float width = std::sqrt(y * y + x * x);
+    x /= width;
+    y /= width;
+    return *this;
+  }
 };
 
 template<typename T>
@@ -46,5 +55,14 @@ YX<T> operator+(YX<T> const& l, YX<T> r)
   return YX<T>{
     .y = l.y + r.y,
     .x = l.x + r.x,
+  };
+}
+
+template<typename T>
+YX<T> operator-(YX<T> const& l, YX<T> r)
+{
+  return YX<T>{
+    .y = l.y - r.y,
+    .x = l.x - r.x,
   };
 }

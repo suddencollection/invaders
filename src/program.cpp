@@ -1,12 +1,14 @@
 #include "program.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <iostream>
 #include <thread>
 
 Program::Program(std::filesystem::path sprites_path)
 {
+  m_random.seed(std::chrono::steady_clock::now().time_since_epoch().count());
+
   initCurses();
   createWindows();
   loadSprites(sprites_path);
@@ -56,6 +58,7 @@ void Program::loadSprites(Path path)
 {
   m_sprites.ship = std::make_shared<Sprite>(path / "ship");
   m_sprites.shipBullet = std::make_shared<Sprite>(path / "shipBullet");
+  m_sprites.alienBullet = std::make_shared<Sprite>(path / "alienBullet");
 
   for(int line{}; line < m_alienFormation.y; ++line) {
     m_sprites.aliens.push_back(std::make_shared<Sprite>(path / ("alien" + std::to_string(line))));
@@ -181,9 +184,63 @@ void Program::render(float frameDuration)
     }
   }
 
+  std::string shipHP = "HP ";
+  int hp = m_entities.at(m_entityIDs.ship).health();
+  mvprintw(((getmaxy(stdscr) + getmaxy(m_arenaWin)) / 2) + 1, (getmaxx(stdscr) - getmaxx(m_arenaBorderWin)) / 2 + 1, "%s %i", shipHP.c_str(), hp);
+
   refresh();
   wrefresh(m_arenaBorderWin);
   wrefresh(m_arenaWin);
+}
+
+void Program::startingScreen()
+{
+  std::string str_controls = "'l' and ';' for movement, ' ' for shooting";
+  std::string str_start = "press any key to start";
+
+  std::string str_0 = "_______                  ___              ";
+  std::string str_1 = "|_   _|                  | |              ";
+  std::string str_2 = "  | | _ ____   ____ _  __| | ___ _ __ ___ ";
+  std::string str_3 = "  | || '_ \\ \\ / / _` |/ _` |/ _ \\ '__/ __|";
+  std::string str_4 = " _| || | | \\ V / (_| | (_| |  __/ |  \\__ \\";
+  std::string str_5 = " \\___/_| |_|\\_/ \\__,_|\\__,_|\\___|_|  |___/";
+
+
+  nodelay(stdscr, false);
+  do {
+    render(0);
+
+    mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 8, (getmaxx(stdscr) - str_0.size()) / 2, "%s", str_0.c_str());
+    mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 7, (getmaxx(stdscr) - str_1.size()) / 2, "%s", str_1.c_str());
+    mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 6, (getmaxx(stdscr) - str_2.size()) / 2, "%s", str_2.c_str());
+    mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 5, (getmaxx(stdscr) - str_3.size()) / 2, "%s", str_3.c_str());
+    mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 4, (getmaxx(stdscr) - str_4.size()) / 2, "%s", str_4.c_str());
+    mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 3, (getmaxx(stdscr) - str_5.size()) / 2, "%s", str_5.c_str());
+
+    mvprintw(((getmaxy(stdscr) + getmaxy(m_arenaWin)) / 2) + 1, (getmaxx(stdscr) - getmaxx(m_arenaBorderWin)) / 2 + 1, "%s", "        ");
+    mvprintw(((getmaxy(stdscr) + getmaxy(m_arenaWin)) / 2) + 2, (getmaxx(stdscr) - str_controls.size()) / 2 + 1, "%s", str_controls.c_str());
+    mvprintw(((getmaxy(stdscr) + getmaxy(m_arenaWin)) / 2) + 3, (getmaxx(stdscr) - str_start.size()) / 2 + 1, "%s", str_start.c_str());
+    refresh();
+    nodelay(stdscr, false);
+  } while(getch() == ERR);
+  nodelay(stdscr, true);
+}
+
+void Program::endingScreen()
+{
+  std::string won_str = "you won!";
+  std::string lost_str = "your ship was destroyed!";
+  std::string quit_str = "press 'q' to quit.";
+  nodelay(stdscr, false);
+  do {
+    if(m_gameState == GameState::won) {
+      mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 3, (getmaxx(stdscr) - won_str.size()) / 2, "%s", won_str.c_str());
+    } else if(m_gameState == GameState::lose) {
+      mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 3, (getmaxx(stdscr) - lost_str.size()) / 2, "%s", lost_str.c_str());
+    }
+    mvprintw(((getmaxy(stdscr) - getmaxy(m_arenaWin)) / 2) - 2, (getmaxx(stdscr) - quit_str.size()) / 2, "%s", quit_str.c_str());
+    refresh();
+  } while(getch() != 'q');
 }
 
 void Program::drawSprite(std::vector<chtype>& buffer, Entity& entity)
@@ -251,9 +308,18 @@ void Program::logic(int input, float timeStep, bool& force)
     return;
   }
 
+  // Winning/Losing conditions
+  if(m_entityIDs.aliens.size() == 0) {
+    m_gameState = GameState::won;
+    return;
+  } else if(m_entities.at(m_entityIDs.ship).health() == 0) {
+    m_gameState = GameState::lose;
+    return;
+  }
+
   // Move ship and Spawn ship bullets
   Entity& shipEntity = m_entities.at(m_entityIDs.ship);
-  static auto lastShot{std::chrono::steady_clock::now()};
+  static auto lastShipShot{std::chrono::steady_clock::now()};
   auto moveShip = [&, this](int direction) {
     shipEntity.position().x += direction * ts * 16.f;
     std::vector<Entity::ID> collisions = m_collisionBuffer.collides(shipEntity.id());
@@ -273,8 +339,8 @@ void Program::logic(int input, float timeStep, bool& force)
       break;
     case ' ':
       auto now = std::chrono::steady_clock::now();
-      if((now - lastShot) >= std::chrono::milliseconds(300)) {
-        lastShot = now;
+      if((now - lastShipShot) >= std::chrono::milliseconds(300)) {
+        lastShipShot = now;
 
         static bool side{};
         int health = 3;
@@ -304,6 +370,44 @@ void Program::logic(int input, float timeStep, bool& force)
     direction = -direction;
   }
 
+  // Alien Bullets
+  auto now = std::chrono::steady_clock::now();
+  static auto lastAlienShot{std::chrono::steady_clock::now()};
+  if((now - lastAlienShot) >= std::chrono::milliseconds(std::max(30 * m_entityIDs.aliens.size(), std::size_t{250}))) {
+    lastAlienShot = now;
+    // Get front aliens
+    std::vector<Entity::ID> front_aliens{m_entityIDs.aliens.front()};
+    for(auto& e : m_entityIDs.aliens) {
+      auto& ent = m_entities.at(e);
+      auto& stored_ent = m_entities.at(front_aliens.front());
+      if(ent.position().y > stored_ent.position().y) {
+        front_aliens.clear();
+        front_aliens.push_back(e);
+      } else {
+        front_aliens.push_back(e);
+      }
+    }
+
+    // Shoot at ship
+    int choosen_one = m_random() % front_aliens.size();
+    auto e = front_aliens.at(choosen_one);
+    auto& ent = m_entities.at(e);
+    auto& ship = m_entities.at(m_entityIDs.ship);
+
+    // spawn bullet
+    static bool side{};
+    int health = 1;
+    YX<float> position{
+      .y = ent.position().y + (ent.sprite().size().y),
+      .x = ent.position().x + side,
+    };
+    YX<float> velocity = (ent.position() - ship.position()).normalize() * std::fabs(m_alienVelocity.x);
+    velocity.x *= -1;
+    Entity::ID id = spawnEntity(position, velocity, health, m_sprites.alienBullet);
+    m_entityIDs.bullets.push_back(id);
+    side = !side;
+  }
+
   // Move bullets
   for(auto& bulletID : m_entityIDs.bullets) {
     auto& bullet = m_entities.at(bulletID);
@@ -322,7 +426,8 @@ void Program::logic(int input, float timeStep, bool& force)
   }
 
   // Erase Dead Entities (Bullets)
-  std::vector<Entity::ID> bulletsToErase{};
+  std::vector<Entity::ID>
+    bulletsToErase{};
   for(auto& bulletID : m_entityIDs.bullets) // destroy bullets with health 0
   {
     auto& bullet = m_entities.at(bulletID);
@@ -359,13 +464,6 @@ void Program::logic(int input, float timeStep, bool& force)
     m_entityIDs.aliens.remove(id);
   }
 
-  // Winning/Losing conditions
-  if(m_entityIDs.aliens.size() == 0) {
-    m_gameState = GameState::won;
-  } else if(m_entities.at(m_entityIDs.ship).health() == 0) {
-    m_gameState = GameState::lose;
-  }
-
   // Collisions
   m_collisionBuffer.update();
   paintBorders();
@@ -373,6 +471,8 @@ void Program::logic(int input, float timeStep, bool& force)
 
 void Program::run()
 {
+  startingScreen();
+
   auto& now{std::chrono::steady_clock::now};
   using Duration = std::chrono::duration<float>;
   auto updateStartTime = now();
@@ -393,12 +493,14 @@ void Program::run()
     int input = getch();
     bool forceRender = false;
     logic(input, updateDuration.count(), forceRender);
+
     // impose a limit on UPS (updates per second)
     // kinda necessary because only individual keystrokes are registered in the terminal
     if(updateDuration < minimunTimeStep) {
       std::this_thread::sleep_for(minimunTimeStep - updateDuration);
     }
 
+    // rendering
     renderEndTime = now();
     frameCounter += renderEndTime - renderStartTime;
     renderStartTime = renderEndTime;
@@ -407,4 +509,6 @@ void Program::run()
       frameCounter = {};
     }
   }
+
+  endingScreen();
 }
